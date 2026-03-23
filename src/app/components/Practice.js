@@ -70,14 +70,12 @@ function analyzeTranscript(text) {
   const fillerCount = foundFillers.reduce((a, b) => a + b.count, 0);
   const fillerRate = totalWords > 0 ? (fillerCount / totalWords) * 100 : 0;
 
-  // Simple grammar checks
   const grammarIssues = [];
-  if (/\bi seen\b/i.test(text)) grammarIssues.push('"I seen" → should be "I saw"');
-  if (/\bthey was\b/i.test(text)) grammarIssues.push('"they was" → should be "they were"');
-  if (/\bwe was\b/i.test(text)) grammarIssues.push('"we was" → should be "we were"');
-  if (/\bi done\b/i.test(text)) grammarIssues.push('"I done" → should be "I did"');
+  if (/\bi seen\b/i.test(text)) grammarIssues.push('"I seen" should be "I saw"');
+  if (/\bthey was\b/i.test(text)) grammarIssues.push('"they was" should be "they were"');
+  if (/\bwe was\b/i.test(text)) grammarIssues.push('"we was" should be "we were"');
+  if (/\bi done\b/i.test(text)) grammarIssues.push('"I done" should be "I did"');
 
-  // Score
   let score = 100;
   score -= fillerRate * 3;
   score -= grammarIssues.length * 10;
@@ -95,11 +93,13 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [feedback, setFeedback] = useState(null);
-  const [tab, setTab] = useState('lessons'); // lessons | custom
+  const [tab, setTab] = useState('lessons');
   const recognitionRef = useRef(null);
 
+  // Math.random() called inside event handler — not during render
   const startLesson = (lesson) => {
-    const randomPrompt = lesson.prompts[Math.floor(Math.random() * lesson.prompts.length)];
+    const idx = Math.floor(Math.random() * lesson.prompts.length);
+    const randomPrompt = lesson.prompts[idx];
     setSelectedLesson(lesson);
     setPrompt(randomPrompt);
     setTranscript('');
@@ -113,7 +113,7 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     setFeedback(null);
   };
 
-  const toggleRecording = () => {
+  const toggleRecording = async () => {
     if (isRecording) {
       recognitionRef.current?.stop();
       setIsRecording(false);
@@ -123,6 +123,14 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      return;
+    }
+
+    // Explicitly request mic permission first — required on Android Chrome
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      alert('Microphone access was denied. Please allow mic access in your browser settings and try again.');
       return;
     }
 
@@ -147,6 +155,11 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
 
     recognition.onerror = (e) => {
       console.error('Speech error:', e.error);
+      if (e.error === 'not-allowed') {
+        alert('Mic blocked. Go to Chrome Settings → Site Settings → Microphone and allow this site.');
+      } else if (e.error === 'network') {
+        alert('Network error. Speech recognition requires an internet connection on Android.');
+      }
       setIsRecording(false);
     };
 
@@ -175,8 +188,8 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-3xl font-bold text-white">Practice 🎯</h2>
-          <p className="text-white/50 mt-1">Choose a lesson or one of your custom prompts.</p>
+          <h2 className="text-3xl font-bold text-[#2D1B14] dark:text-white">Practice 🎯</h2>
+          <p className="text-[#2D1B14]/50 dark:text-white/50 mt-1">Choose a lesson or one of your custom prompts.</p>
         </div>
 
         {/* Tabs */}
@@ -185,8 +198,11 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all capitalize
-                ${tab === t ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:text-white'}`}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all
+                ${tab === t
+                  ? 'bg-[#E8637A] text-white'
+                  : 'bg-[#FFF5EE] dark:bg-white/5 text-[#2D1B14]/50 dark:text-white/50 hover:text-[#2D1B14] dark:hover:text-white'
+                }`}
             >
               {t === 'lessons' ? '📚 Lessons' : '🎙️ My Prompts'}
             </button>
@@ -199,14 +215,14 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
               <div
                 key={lesson.id}
                 onClick={() => startLesson(lesson)}
-                className="bg-[#111118] border border-white/10 hover:border-violet-500/50 rounded-2xl p-4 flex items-center gap-4 cursor-pointer hover:bg-violet-500/5 transition-all"
+                className="bg-[#FFF5EE] dark:bg-[#2A1F1A] border border-[#F2E8E0] dark:border-white/10 hover:border-[#E8637A]/40 rounded-2xl p-4 flex items-center gap-4 cursor-pointer hover:bg-[#E8637A]/5 transition-all"
               >
                 <div className="text-3xl">{lesson.icon}</div>
                 <div>
-                  <div className="text-white font-medium">{lesson.title}</div>
-                  <div className="text-white/40 text-sm">{lesson.prompts.length} prompts</div>
+                  <div className="text-[#2D1B14] dark:text-white font-medium">{lesson.title}</div>
+                  <div className="text-[#2D1B14]/40 dark:text-white/40 text-sm">{lesson.prompts.length} prompts</div>
                 </div>
-                <div className="ml-auto text-white/30">›</div>
+                <div className="ml-auto text-[#2D1B14]/30 dark:text-white/30">›</div>
               </div>
             ))}
           </div>
@@ -215,7 +231,7 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
         {tab === 'custom' && (
           <div className="space-y-3">
             {customPrompts.length === 0 ? (
-              <div className="text-center py-16 text-white/30">
+              <div className="text-center py-16 text-[#2D1B14]/30 dark:text-white/30">
                 <div className="text-4xl mb-3">🎙️</div>
                 <p>No custom prompts yet.</p>
                 <p className="text-sm mt-1">Add some from the Progress tab!</p>
@@ -225,14 +241,14 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
                 <div
                   key={i}
                   onClick={() => startCustomPrompt(cp)}
-                  className="bg-[#111118] border border-white/10 hover:border-violet-500/50 rounded-2xl p-4 flex items-center gap-4 cursor-pointer hover:bg-violet-500/5 transition-all"
+                  className="bg-[#FFF5EE] dark:bg-[#2A1F1A] border border-[#F2E8E0] dark:border-white/10 hover:border-[#E8637A]/40 rounded-2xl p-4 flex items-center gap-4 cursor-pointer hover:bg-[#E8637A]/5 transition-all"
                 >
                   <div className="text-3xl">{cp.icon}</div>
                   <div>
-                    <div className="text-white font-medium">{cp.title}</div>
-                    <div className="text-white/40 text-sm line-clamp-1">{cp.prompt}</div>
+                    <div className="text-[#2D1B14] dark:text-white font-medium">{cp.title}</div>
+                    <div className="text-[#2D1B14]/40 dark:text-white/40 text-sm line-clamp-1">{cp.prompt}</div>
                   </div>
-                  <div className="ml-auto text-white/30">›</div>
+                  <div className="ml-auto text-[#2D1B14]/30 dark:text-white/30">›</div>
                 </div>
               ))
             )}
@@ -247,26 +263,26 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={reset} className="text-white/40 hover:text-white transition text-2xl">←</button>
+        <button onClick={reset} className="text-[#2D1B14]/40 dark:text-white/40 hover:text-[#E8637A] transition text-2xl">←</button>
         <div>
-          <div className="text-white/50 text-sm">{selectedLesson.icon} {selectedLesson.title}</div>
-          <h2 className="text-xl font-bold text-white">Your turn to speak</h2>
+          <div className="text-[#2D1B14]/50 dark:text-white/50 text-sm">{selectedLesson.icon} {selectedLesson.title}</div>
+          <h2 className="text-xl font-bold text-[#2D1B14] dark:text-white">Your turn to speak</h2>
         </div>
       </div>
 
       {/* Prompt card */}
-      <div className="bg-violet-600/10 border border-violet-500/30 rounded-2xl p-5">
-        <div className="text-violet-300 text-xs font-semibold uppercase tracking-wider mb-2">Your Prompt</div>
-        <p className="text-white text-lg leading-relaxed">{prompt}</p>
+      <div className="bg-[#E8637A]/10 border border-[#E8637A]/20 rounded-2xl p-5">
+        <div className="text-[#E8637A] text-xs font-semibold uppercase tracking-wider mb-2">Your Prompt</div>
+        <p className="text-[#2D1B14] dark:text-white text-lg leading-relaxed">{prompt}</p>
       </div>
 
       {/* Transcript */}
-      <div className="bg-[#111118] border border-white/10 rounded-2xl p-5 min-h-32">
-        <div className="text-white/40 text-xs mb-2">Live transcript</div>
+      <div className="bg-[#FFF5EE] dark:bg-[#2A1F1A] border border-[#F2E8E0] dark:border-white/10 rounded-2xl p-5 min-h-32">
+        <div className="text-[#2D1B14]/40 dark:text-white/40 text-xs mb-2">Live transcript</div>
         {transcript ? (
-          <p className="text-white leading-relaxed">{transcript}</p>
+          <p className="text-[#2D1B14] dark:text-white leading-relaxed">{transcript}</p>
         ) : (
-          <p className="text-white/20 italic">Start speaking — your words will appear here...</p>
+          <p className="text-[#2D1B14]/20 dark:text-white/20 italic">Start speaking — your words will appear here...</p>
         )}
       </div>
 
@@ -277,7 +293,7 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
           className={`flex-1 py-4 rounded-2xl font-bold text-lg transition-all
             ${isRecording
               ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
-              : 'bg-violet-600 hover:bg-violet-700 text-white'
+              : 'bg-[#E8637A] hover:bg-[#d4546b] text-white'
             }`}
         >
           {isRecording ? '⏹ Stop Recording' : '🎙️ Start Speaking'}
@@ -286,7 +302,7 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
         {transcript && !isRecording && (
           <button
             onClick={getFeedback}
-            className="px-6 py-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl font-bold transition-all"
+            className="px-6 py-4 bg-[#F4956A] hover:bg-[#e0845a] text-white rounded-2xl font-bold transition-all"
           >
             Get Feedback ✨
           </button>
@@ -295,24 +311,24 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
 
       {/* Feedback */}
       {feedback && (
-        <div className="bg-[#111118] border border-white/10 rounded-2xl p-5 space-y-4">
+        <div className="bg-[#FFF5EE] dark:bg-[#2A1F1A] border border-[#F2E8E0] dark:border-white/10 rounded-2xl p-5 space-y-4">
           <div className="flex items-center gap-4">
-            <div className={`text-5xl font-black ${feedback.score >= 75 ? 'text-green-400' : feedback.score >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+            <div className={`text-5xl font-black ${feedback.score >= 75 ? 'text-[#22C55E]' : feedback.score >= 50 ? 'text-[#F4956A]' : 'text-[#E8637A]'}`}>
               {feedback.grade}
             </div>
             <div>
-              <div className="text-white font-bold text-xl">{feedback.score}/100</div>
-              <div className="text-white/40 text-sm">{feedback.totalWords} words spoken</div>
+              <div className="text-[#2D1B14] dark:text-white font-bold text-xl">{feedback.score}/100</div>
+              <div className="text-[#2D1B14]/40 dark:text-white/40 text-sm">{feedback.totalWords} words spoken</div>
             </div>
           </div>
 
           {feedback.foundFillers.length > 0 && (
             <div>
-              <div className="text-red-400 font-semibold text-sm mb-2">🚫 Filler words detected</div>
+              <div className="text-[#E8637A] font-semibold text-sm mb-2">🚫 Filler words detected</div>
               <div className="flex flex-wrap gap-2">
                 {feedback.foundFillers.map((f) => (
-                  <span key={f.word} className="bg-red-500/10 border border-red-500/20 text-red-300 text-xs px-3 py-1 rounded-full">
-                    "{f.word}" ×{f.count}
+                  <span key={f.word} className="bg-[#E8637A]/10 border border-[#E8637A]/20 text-[#E8637A] text-xs px-3 py-1 rounded-full">
+                    &quot;{f.word}&quot; &times;{f.count}
                   </span>
                 ))}
               </div>
@@ -321,22 +337,22 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
 
           {feedback.grammarIssues.length > 0 && (
             <div>
-              <div className="text-yellow-400 font-semibold text-sm mb-2">📝 Grammar notes</div>
+              <div className="text-[#F4956A] font-semibold text-sm mb-2">📝 Grammar notes</div>
               <ul className="space-y-1">
                 {feedback.grammarIssues.map((issue, i) => (
-                  <li key={i} className="text-white/60 text-sm">• {issue}</li>
+                  <li key={i} className="text-[#2D1B14]/60 dark:text-white/60 text-sm">• {issue}</li>
                 ))}
               </ul>
             </div>
           )}
 
           {feedback.foundFillers.length === 0 && feedback.grammarIssues.length === 0 && (
-            <div className="text-green-400 font-medium">✅ Great job! No filler words or grammar issues detected.</div>
+            <div className="text-[#22C55E] font-medium">✅ Great job! No filler words or grammar issues detected.</div>
           )}
 
           <button
             onClick={reset}
-            className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium transition-all"
+            className="w-full py-3 bg-[#E8637A] hover:bg-[#d4546b] text-white rounded-xl font-medium transition-all"
           >
             Practice Again 🔄
           </button>

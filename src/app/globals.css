@@ -3,6 +3,8 @@
 @source "../app/**/*.{js,jsx}";
 @source "../components/**/*.{js,jsx}";
 
+@variant dark (&:where(.dark, .dark *));
+
 * {
   box-sizing: border-box;
 }
@@ -10,6 +12,6 @@
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: #0a0a0f;
-  color: white;
+  background-color: #FDFAF7;
+  color: #2D1B14;
 }
