@@ -94,18 +94,26 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
   const [transcript, setTranscript] = useState('');
   const [feedback, setFeedback] = useState(null);
   const [tab, setTab] = useState('lessons');
+  const [debugLog, setDebugLog] = useState([]);
+
   const recognitionRef = useRef(null);
   const isManuallyStoppedRef = useRef(false);
   const transcriptRef = useRef('');
+  const restartTimerRef = useRef(null);
+
+  const log = (msg) => {
+    console.log('[STT]', msg);
+    setDebugLog((prev) => [`${new Date().toISOString().slice(11, 23)} ${msg}`, ...prev].slice(0, 20));
+  };
 
   const startLesson = (lesson) => {
     const idx = Math.floor(Math.random() * lesson.prompts.length);
-    const randomPrompt = lesson.prompts[idx];
     setSelectedLesson(lesson);
-    setPrompt(randomPrompt);
+    setPrompt(lesson.prompts[idx]);
     setTranscript('');
     transcriptRef.current = '';
     setFeedback(null);
+    setDebugLog([]);
   };
 
   const startCustomPrompt = (cp) => {
@@ -114,19 +122,30 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     setTranscript('');
     transcriptRef.current = '';
     setFeedback(null);
+    setDebugLog([]);
   };
 
   const startRecognition = () => {
-    // Always create a fresh instance — reusing the same instance causes
-    // InvalidStateError on Android Chrome when trying to restart after onend.
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
 
-    recognition.continuous = false; // false for Android compat; we manually restart
+    // KEY FIX: continuous=true is more reliable on Android Chrome over HTTPS.
+    // continuous=false causes sessions to end before Google's speech servers
+    // return results, so onresult never fires and the transcript stays empty.
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'en-US';
+    recognition.maxAlternatives = 1;
+
+    log('recognition.start() called');
+
+    recognition.onstart = () => log('onstart — mic open');
+    recognition.onsoundstart = () => log('onsoundstart — audio detected');
+    recognition.onspeechstart = () => log('onspeechstart — speech detected');
+    recognition.onspeechend = () => log('onspeechend — speech stopped');
 
     recognition.onresult = (e) => {
+      log(`onresult — ${e.results.length} result(s)`);
       let finalText = '';
       let interimText = '';
       for (let i = 0; i < e.results.length; i++) {
@@ -136,7 +155,7 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
           interimText += e.results[i][0].transcript;
         }
       }
-      // Show interim text live, but only commit final results to the persistent ref
+      log(`final: "${finalText}" interim: "${interimText}"`);
       setTranscript(transcriptRef.current + finalText + interimText);
       if (finalText) {
         transcriptRef.current += finalText + ' ';
@@ -144,21 +163,31 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     };
 
     recognition.onerror = (e) => {
-      if (e.error === 'no-speech') return; // Harmless — just let onend restart it
-      console.error('Speech error:', e.error);
+      log(`onerror: ${e.error}`);
+      if (e.error === 'no-speech' || e.error === 'aborted') return;
       if (e.error === 'not-allowed') {
-        alert('Mic blocked. Go to Chrome Settings → Site Settings → Microphone and allow this site.');
+        alert('Microphone blocked. Tap the lock icon in Chrome address bar → Site settings → Microphone → Allow.');
         isManuallyStoppedRef.current = true;
-      } else if (e.error === 'network') {
-        alert('Network error. Speech recognition requires an internet connection on Android.');
+        setIsRecording(false);
+        return;
+      }
+      if (e.error === 'network') {
+        alert('Network error — speech recognition needs an internet connection.');
         isManuallyStoppedRef.current = true;
+        setIsRecording(false);
+        return;
       }
     };
 
     recognition.onend = () => {
+      log(`onend — manuallyStopped: ${isManuallyStoppedRef.current}`);
       if (!isManuallyStoppedRef.current) {
-        // Start a brand-new instance for the next session
-        startRecognition();
+        // 300ms delay prevents rapid-fire restart loop on Android that can
+        // lock the mic without ever returning results
+        restartTimerRef.current = setTimeout(() => {
+          log('restarting...');
+          startRecognition();
+        }, 300);
       } else {
         setIsRecording(false);
       }
@@ -170,7 +199,9 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
 
   const toggleRecording = () => {
     if (isRecording) {
+      log('user stopped');
       isManuallyStoppedRef.current = true;
+      clearTimeout(restartTimerRef.current);
       recognitionRef.current?.stop();
       setIsRecording(false);
       return;
@@ -178,10 +209,11 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      alert('Speech recognition is not supported. Please use Chrome on Android.');
       return;
     }
 
+    log('user started');
     isManuallyStoppedRef.current = false;
     startRecognition();
     setIsRecording(true);
@@ -195,10 +227,15 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
   };
 
   const reset = () => {
+    isManuallyStoppedRef.current = true;
+    clearTimeout(restartTimerRef.current);
+    recognitionRef.current?.stop();
     setSelectedLesson(null);
     setTranscript('');
     transcriptRef.current = '';
     setFeedback(null);
+    setIsRecording(false);
+    setDebugLog([]);
   };
 
   // --- Lesson picker ---
@@ -210,7 +247,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
           <p className="text-[#2D1B14]/50 dark:text-white/50 mt-1">Choose a lesson or one of your custom prompts.</p>
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-2">
           {['lessons', 'custom'].map((t) => (
             <button
@@ -279,7 +315,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
   // --- Recording screen ---
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <button onClick={reset} className="text-[#2D1B14]/40 dark:text-white/40 hover:text-[#E8637A] transition text-2xl">←</button>
         <div>
@@ -288,13 +323,11 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
         </div>
       </div>
 
-      {/* Prompt card */}
       <div className="bg-[#E8637A]/10 border border-[#E8637A]/20 rounded-2xl p-5">
         <div className="text-[#E8637A] text-xs font-semibold uppercase tracking-wider mb-2">Your Prompt</div>
         <p className="text-[#2D1B14] dark:text-white text-lg leading-relaxed">{prompt}</p>
       </div>
 
-      {/* Transcript */}
       <div className="bg-[#FFF5EE] dark:bg-[#2A1F1A] border border-[#F2E8E0] dark:border-white/10 rounded-2xl p-5 min-h-32">
         <div className="text-[#2D1B14]/40 dark:text-white/40 text-xs mb-2">Live transcript</div>
         {transcript ? (
@@ -304,7 +337,14 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
         )}
       </div>
 
-      {/* Controls */}
+      {/* Debug panel — remove before final release */}
+      {debugLog.length > 0 && (
+        <div className="bg-black/80 rounded-xl p-3 font-mono text-xs text-green-400 space-y-0.5 max-h-40 overflow-y-auto">
+          <div className="text-white/40 mb-1">🐛 STT debug log</div>
+          {debugLog.map((line, i) => <div key={i}>{line}</div>)}
+        </div>
+      )}
+
       <div className="flex gap-3">
         <button
           onClick={toggleRecording}
@@ -327,7 +367,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
         )}
       </div>
 
-      {/* Feedback */}
       {feedback && (
         <div className="bg-[#FFF5EE] dark:bg-[#2A1F1A] border border-[#F2E8E0] dark:border-white/10 rounded-2xl p-5 space-y-4">
           <div className="flex items-center gap-4">
