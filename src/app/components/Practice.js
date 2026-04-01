@@ -95,6 +95,8 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
   const [feedback, setFeedback] = useState(null);
   const [tab, setTab] = useState('lessons');
   const recognitionRef = useRef(null);
+  const isManuallyStoppedRef = useRef(false);
+  const transcriptRef = useRef('');
 
   // Math.random() called inside event handler — not during render
   const startLesson = (lesson) => {
@@ -103,6 +105,7 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     setSelectedLesson(lesson);
     setPrompt(randomPrompt);
     setTranscript('');
+    transcriptRef.current = '';
     setFeedback(null);
   };
 
@@ -110,15 +113,19 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     setSelectedLesson({ id: 'custom', icon: cp.icon, title: cp.title });
     setPrompt(cp.prompt);
     setTranscript('');
+    transcriptRef.current = '';
     setFeedback(null);
   };
 
   const toggleRecording = async () => {
     if (isRecording) {
+      isManuallyStoppedRef.current = true;
       recognitionRef.current?.stop();
       setIsRecording(false);
       return;
     }
+
+    isManuallyStoppedRef.current = false;
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -139,31 +146,45 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
-    let finalTranscript = '';
+    let sessionTranscript = '';
 
     recognition.onresult = (e) => {
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          finalTranscript += e.results[i][0].transcript + ' ';
+          sessionTranscript += e.results[i][0].transcript + ' ';
         } else {
           interim += e.results[i][0].transcript;
         }
       }
-      setTranscript(finalTranscript + interim);
+      setTranscript(transcriptRef.current + sessionTranscript + interim);
     };
 
     recognition.onerror = (e) => {
       console.error('Speech error:', e.error);
       if (e.error === 'not-allowed') {
         alert('Mic blocked. Go to Chrome Settings → Site Settings → Microphone and allow this site.');
+        isManuallyStoppedRef.current = true;
       } else if (e.error === 'network') {
         alert('Network error. Speech recognition requires an internet connection on Android.');
+        isManuallyStoppedRef.current = true;
       }
-      setIsRecording(false);
+      // Don't auto-stop for other errors like 'no-speech' since onend handled it.
     };
 
-    recognition.onend = () => setIsRecording(false);
+    recognition.onend = () => {
+      if (!isManuallyStoppedRef.current) {
+        transcriptRef.current += sessionTranscript;
+        sessionTranscript = ''; // Reset for the next silent restart
+        try {
+          recognition.start();
+        } catch (err) {
+          setIsRecording(false);
+        }
+      } else {
+        setIsRecording(false);
+      }
+    };
 
     recognitionRef.current = recognition;
     recognition.start();
@@ -180,6 +201,7 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
   const reset = () => {
     setSelectedLesson(null);
     setTranscript('');
+    transcriptRef.current = '';
     setFeedback(null);
   };
 
