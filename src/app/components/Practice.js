@@ -117,7 +117,7 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     setFeedback(null);
   };
 
-  const toggleRecording = async () => {
+  const toggleRecording = () => {
     if (isRecording) {
       isManuallyStoppedRef.current = true;
       recognitionRef.current?.stop();
@@ -130,14 +130,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
-      return;
-    }
-
-    // Explicitly request mic permission first — required on Android Chrome
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err) {
-      alert('Microphone access was denied. Please allow mic access in your browser settings and try again.');
       return;
     }
 
