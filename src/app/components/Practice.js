@@ -134,7 +134,12 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = true;
+    
+    // Android Chrome throws a "network" error if continuous is true.
+    // We set it to false and let our onend polyfill handle the looping.
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    recognition.continuous = !isAndroid;
+    
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
