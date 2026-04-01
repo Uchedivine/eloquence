@@ -135,26 +135,20 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
 
     const recognition = new SpeechRecognition();
     
-    // Android Chrome throws a "network" error if continuous is true.
-    // We set it to false and let our onend polyfill handle the looping.
     const isAndroid = /Android/i.test(navigator.userAgent);
     recognition.continuous = !isAndroid;
-    
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
-    let sessionTranscript = '';
+    const currentSessionTranscriptRef = { current: '' };
 
     recognition.onresult = (e) => {
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          sessionTranscript += e.results[i][0].transcript + ' ';
-        } else {
-          interim += e.results[i][0].transcript;
-        }
+      let resultText = '';
+      for (let i = 0; i < e.results.length; i++) {
+        resultText += e.results[i][0].transcript;
       }
-      setTranscript(transcriptRef.current + sessionTranscript + interim);
+      currentSessionTranscriptRef.current = resultText;
+      setTranscript(transcriptRef.current + resultText);
     };
 
     recognition.onerror = (e) => {
@@ -166,13 +160,13 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
         alert('Network error. Speech recognition requires an internet connection on Android.');
         isManuallyStoppedRef.current = true;
       }
-      // Don't auto-stop for other errors like 'no-speech' since onend handled it.
     };
 
     recognition.onend = () => {
       if (!isManuallyStoppedRef.current) {
-        transcriptRef.current += sessionTranscript;
-        sessionTranscript = ''; // Reset for the next silent restart
+        // Commit whatever we heard in this session (final or interim) before restarting
+        transcriptRef.current += currentSessionTranscriptRef.current + ' ';
+        currentSessionTranscriptRef.current = ''; 
         try {
           recognition.start();
         } catch (err) {
