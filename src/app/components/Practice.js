@@ -94,17 +94,11 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
   const [transcript, setTranscript] = useState('');
   const [feedback, setFeedback] = useState(null);
   const [tab, setTab] = useState('lessons');
-  const [debugLog, setDebugLog] = useState([]);
 
   const recognitionRef = useRef(null);
   const isManuallyStoppedRef = useRef(false);
   const transcriptRef = useRef('');
   const restartTimerRef = useRef(null);
-
-  const log = (msg) => {
-    console.log('[STT]', msg);
-    setDebugLog((prev) => [`${new Date().toISOString().slice(11, 23)} ${msg}`, ...prev].slice(0, 20));
-  };
 
   const startLesson = (lesson) => {
     const idx = Math.floor(Math.random() * lesson.prompts.length);
@@ -113,7 +107,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     setTranscript('');
     transcriptRef.current = '';
     setFeedback(null);
-    setDebugLog([]);
   };
 
   const startCustomPrompt = (cp) => {
@@ -122,30 +115,18 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     setTranscript('');
     transcriptRef.current = '';
     setFeedback(null);
-    setDebugLog([]);
   };
 
   const startRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
 
-    // KEY FIX: continuous=true is more reliable on Android Chrome over HTTPS.
-    // continuous=false causes sessions to end before Google's speech servers
-    // return results, so onresult never fires and the transcript stays empty.
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'en-US';
     recognition.maxAlternatives = 1;
 
-    log('recognition.start() called');
-
-    recognition.onstart = () => log('onstart — mic open');
-    recognition.onsoundstart = () => log('onsoundstart — audio detected');
-    recognition.onspeechstart = () => log('onspeechstart — speech detected');
-    recognition.onspeechend = () => log('onspeechend — speech stopped');
-
     recognition.onresult = (e) => {
-      log(`onresult — ${e.results.length} result(s)`);
       let finalText = '';
       let interimText = '';
       for (let i = 0; i < e.results.length; i++) {
@@ -155,7 +136,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
           interimText += e.results[i][0].transcript;
         }
       }
-      log(`final: "${finalText}" interim: "${interimText}"`);
       setTranscript(transcriptRef.current + finalText + interimText);
       if (finalText) {
         transcriptRef.current += finalText + ' ';
@@ -163,7 +143,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     };
 
     recognition.onerror = (e) => {
-      log(`onerror: ${e.error}`);
       if (e.error === 'no-speech' || e.error === 'aborted') return;
       if (e.error === 'not-allowed') {
         alert('Microphone blocked. Tap the lock icon in Chrome address bar → Site settings → Microphone → Allow.');
@@ -180,14 +159,8 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     };
 
     recognition.onend = () => {
-      log(`onend — manuallyStopped: ${isManuallyStoppedRef.current}`);
       if (!isManuallyStoppedRef.current) {
-        // 300ms delay prevents rapid-fire restart loop on Android that can
-        // lock the mic without ever returning results
-        restartTimerRef.current = setTimeout(() => {
-          log('restarting...');
-          startRecognition();
-        }, 300);
+        restartTimerRef.current = setTimeout(() => startRecognition(), 300);
       } else {
         setIsRecording(false);
       }
@@ -199,7 +172,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
 
   const toggleRecording = () => {
     if (isRecording) {
-      log('user stopped');
       isManuallyStoppedRef.current = true;
       clearTimeout(restartTimerRef.current);
       recognitionRef.current?.stop();
@@ -213,7 +185,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
       return;
     }
 
-    log('user started');
     isManuallyStoppedRef.current = false;
     startRecognition();
     setIsRecording(true);
@@ -235,7 +206,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     transcriptRef.current = '';
     setFeedback(null);
     setIsRecording(false);
-    setDebugLog([]);
   };
 
   // --- Lesson picker ---
@@ -336,14 +306,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
           <p className="text-[#2D1B14]/20 dark:text-white/20 italic">Start speaking — your words will appear here...</p>
         )}
       </div>
-
-      {/* Debug panel — remove before final release */}
-      {debugLog.length > 0 && (
-        <div className="bg-black/80 rounded-xl p-3 font-mono text-xs text-green-400 space-y-0.5 max-h-40 overflow-y-auto">
-          <div className="text-white/40 mb-1">🐛 STT debug log</div>
-          {debugLog.map((line, i) => <div key={i}>{line}</div>)}
-        </div>
-      )}
 
       <div className="flex gap-3">
         <button
