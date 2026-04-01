@@ -98,7 +98,6 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
   const isManuallyStoppedRef = useRef(false);
   const transcriptRef = useRef('');
 
-  // Math.random() called inside event handler — not during render
   const startLesson = (lesson) => {
     const idx = Math.floor(Math.random() * lesson.prompts.length);
     const randomPrompt = lesson.prompts[idx];
@@ -117,41 +116,35 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
     setFeedback(null);
   };
 
-  const toggleRecording = () => {
-    if (isRecording) {
-      isManuallyStoppedRef.current = true;
-      recognitionRef.current?.stop();
-      setIsRecording(false);
-      return;
-    }
-
-    isManuallyStoppedRef.current = false;
-
+  const startRecognition = () => {
+    // Always create a fresh instance — reusing the same instance causes
+    // InvalidStateError on Android Chrome when trying to restart after onend.
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
-      return;
-    }
-
     const recognition = new SpeechRecognition();
-    
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    recognition.continuous = !isAndroid;
+
+    recognition.continuous = false; // false for Android compat; we manually restart
     recognition.interimResults = true;
     recognition.lang = 'en-US';
 
-    const currentSessionTranscriptRef = { current: '' };
-
     recognition.onresult = (e) => {
-      let resultText = '';
+      let finalText = '';
+      let interimText = '';
       for (let i = 0; i < e.results.length; i++) {
-        resultText += e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          finalText += e.results[i][0].transcript;
+        } else {
+          interimText += e.results[i][0].transcript;
+        }
       }
-      currentSessionTranscriptRef.current = resultText;
-      setTranscript(transcriptRef.current + resultText);
+      // Show interim text live, but only commit final results to the persistent ref
+      setTranscript(transcriptRef.current + finalText + interimText);
+      if (finalText) {
+        transcriptRef.current += finalText + ' ';
+      }
     };
 
     recognition.onerror = (e) => {
+      if (e.error === 'no-speech') return; // Harmless — just let onend restart it
       console.error('Speech error:', e.error);
       if (e.error === 'not-allowed') {
         alert('Mic blocked. Go to Chrome Settings → Site Settings → Microphone and allow this site.');
@@ -164,14 +157,8 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
 
     recognition.onend = () => {
       if (!isManuallyStoppedRef.current) {
-        // Commit whatever we heard in this session (final or interim) before restarting
-        transcriptRef.current += currentSessionTranscriptRef.current + ' ';
-        currentSessionTranscriptRef.current = ''; 
-        try {
-          recognition.start();
-        } catch (err) {
-          setIsRecording(false);
-        }
+        // Start a brand-new instance for the next session
+        startRecognition();
       } else {
         setIsRecording(false);
       }
@@ -179,6 +166,24 @@ export default function Practice({ onSessionComplete, customPrompts = [] }) {
 
     recognitionRef.current = recognition;
     recognition.start();
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      isManuallyStoppedRef.current = true;
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      return;
+    }
+
+    isManuallyStoppedRef.current = false;
+    startRecognition();
     setIsRecording(true);
   };
 
